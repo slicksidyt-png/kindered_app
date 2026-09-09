@@ -1,0 +1,14 @@
+[
+  {
+    "id": "qr_C396C23890",
+    "qrCode": "qr_C396C23890",
+    "businessId": "business_hotel_sai_palace",
+    "dynamicUrl": "http://localhost:3000/r/qr_C396C23890",
+    "label": "",
+    "status": "active",
+    "createdAt": "2026-09-09T05:43:27.263Z",
+    "updatedAt": "2026-09-09T05:48:03.401Z",
+    "scanCount": 2,
+    "lastScannedAt": "2026-09-09T05:46:02.366Z"
+  }
+]

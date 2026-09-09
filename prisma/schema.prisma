@@ -1,0 +1,323 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BusinessStatus {
+  active
+  inactive
+  suspended
+}
+
+enum UserStatus {
+  active
+  invited
+  disabled
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+}
+
+enum BusinessRole {
+  owner
+  admin
+  manager
+  viewer
+}
+
+enum QrStatus {
+  active
+  inactive
+  retired
+}
+
+enum QrScanOutcome {
+  accepted
+  inactive
+  unassigned
+  not_found
+}
+
+enum ReviewSessionStatus {
+  started
+  feedback_submitted
+  google_clicked
+  completed
+  abandoned
+}
+
+enum PrivateFeedbackStatus {
+  new
+  in_progress
+  resolved
+  archived
+}
+
+enum ReviewDraftKind {
+  ai_generated
+  manual
+}
+
+enum ReviewLanguage {
+  English
+  Hindi
+  Marathi
+  Minglish
+  Hinglish
+}
+
+model Business {
+  id                  String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String                      @db.VarChar(160)
+  slug                String                      @unique @db.VarChar(180)
+  location            String?                     @db.VarChar(255)
+  initial             String?                     @db.VarChar(4)
+  status              BusinessStatus              @default(active)
+  timezone            String                      @default("Asia/Kolkata") @db.VarChar(64)
+  createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  users               BusinessMembership[]
+  googleDestinations  BusinessGoogleDestination[]
+  qrCodes             QrCode[]
+  qrAssignments       QrCodeAssignment[]
+  scans               QrScan[]
+  reviewSessions      ReviewSession[]
+  feedbackSubmissions FeedbackSubmission[]
+  privateFeedback     PrivateFeedback[]
+  googleReviewClicks  GoogleReviewClick[]
+
+  @@index([status])
+  @@map("businesses")
+}
+
+model User {
+  id                  String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String                      @unique @db.VarChar(320)
+  name                String?                     @db.VarChar(160)
+  avatarUrl           String?                     @map("avatar_url") @db.Text
+  status              UserStatus                  @default(invited)
+  platformRole        PlatformRole?               @map("platform_role")
+  lastLoginAt         DateTime?                   @map("last_login_at") @db.Timestamptz(6)
+  createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  memberships         BusinessMembership[]
+  createdDestinations BusinessGoogleDestination[] @relation("DestinationCreatedBy")
+  assignments         QrCodeAssignment[]          @relation("AssignmentCreatedBy")
+  resolvedFeedback    PrivateFeedback[]           @relation("FeedbackResolvedBy")
+
+  @@index([status])
+  @@map("users")
+}
+
+model BusinessMembership {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String       @map("business_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  role       BusinessRole @default(viewer)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  business   Business     @relation(fields: [businessId], references: [id])
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@unique([businessId, userId])
+  @@index([businessId, role])
+  @@index([userId])
+  @@map("business_memberships")
+}
+
+model BusinessGoogleDestination {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId      String              @map("business_id") @db.Uuid
+  reviewUrl       String              @map("review_url") @db.Text
+  label           String?             @db.VarChar(100)
+  isCurrent       Boolean             @default(true) @map("is_current")
+  createdByUserId String?             @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  retiredAt       DateTime?           @map("retired_at") @db.Timestamptz(6)
+  business        Business            @relation(fields: [businessId], references: [id])
+  createdBy       User?               @relation("DestinationCreatedBy", fields: [createdByUserId], references: [id])
+  reviewSessions  ReviewSession[]
+  googleClicks    GoogleReviewClick[]
+
+  @@index([businessId, isCurrent])
+  @@map("business_google_destinations")
+}
+
+model QrCode {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicCode     String              @unique @map("public_code") @db.VarChar(40)
+  businessId     String?             @map("business_id") @db.Uuid
+  label          String?             @db.VarChar(120)
+  dynamicUrl     String              @map("dynamic_url") @db.Text
+  status         QrStatus            @default(inactive)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  activatedAt    DateTime?           @map("activated_at") @db.Timestamptz(6)
+  deactivatedAt  DateTime?           @map("deactivated_at") @db.Timestamptz(6)
+  business       Business?           @relation(fields: [businessId], references: [id])
+  assignments    QrCodeAssignment[]
+  scans          QrScan[]
+  reviewSessions ReviewSession[]
+  googleClicks   GoogleReviewClick[]
+
+  @@index([businessId, status])
+  @@index([status])
+  @@map("qr_codes")
+}
+
+model QrCodeAssignment {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  qrCodeId            String    @map("qr_code_id") @db.Uuid
+  businessId          String    @map("business_id") @db.Uuid
+  assignedByUserId    String?   @map("assigned_by_user_id") @db.Uuid
+  assignedAt          DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  unassignedAt        DateTime? @map("unassigned_at") @db.Timestamptz(6)
+  subscriptionStartAt DateTime  @default(now()) @map("subscription_start_at") @db.Timestamptz(6)
+  subscriptionEndAt   DateTime? @map("subscription_end_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  qrCode              QrCode    @relation(fields: [qrCodeId], references: [id])
+  business            Business  @relation(fields: [businessId], references: [id])
+  assignedBy          User?     @relation("AssignmentCreatedBy", fields: [assignedByUserId], references: [id])
+
+  @@index([qrCodeId, assignedAt])
+  @@index([businessId, assignedAt])
+  @@index([businessId, subscriptionEndAt])
+  @@map("qr_code_assignments")
+}
+
+model QrScan {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  qrCodeId    String         @map("qr_code_id") @db.Uuid
+  businessId  String?        @map("business_id") @db.Uuid
+  outcome     QrScanOutcome
+  scannedAt   DateTime       @default(now()) @map("scanned_at") @db.Timestamptz(6)
+  userAgent   String?        @map("user_agent") @db.Text
+  ipHash      String?        @map("ip_hash") @db.VarChar(128)
+  referrer    String?        @db.Text
+  countryCode String?        @map("country_code") @db.VarChar(2)
+  sessionId   String?        @unique @map("session_id") @db.Uuid
+  qrCode      QrCode         @relation(fields: [qrCodeId], references: [id])
+  business    Business?      @relation(fields: [businessId], references: [id])
+  session     ReviewSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([qrCodeId, scannedAt])
+  @@index([businessId, scannedAt])
+  @@index([outcome, scannedAt])
+  @@index([scannedAt])
+  @@map("qr_scans")
+}
+
+model ReviewSession {
+  id                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  qrScanId            String                     @unique @map("qr_scan_id") @db.Uuid
+  qrCodeId            String                     @map("qr_code_id") @db.Uuid
+  businessId          String                     @map("business_id") @db.Uuid
+  googleDestinationId String?                    @map("google_destination_id") @db.Uuid
+  language            ReviewLanguage             @default(English)
+  status              ReviewSessionStatus        @default(started)
+  startedAt           DateTime                   @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt         DateTime?                  @map("completed_at") @db.Timestamptz(6)
+  lastActivityAt      DateTime                   @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  scan                QrScan?
+  qrCode              QrCode                     @relation(fields: [qrCodeId], references: [id])
+  business            Business                   @relation(fields: [businessId], references: [id])
+  googleDestination   BusinessGoogleDestination? @relation(fields: [googleDestinationId], references: [id])
+  feedback            FeedbackSubmission?
+  drafts              ReviewDraft[]
+  privateFeedback     PrivateFeedback?
+  googleClicks        GoogleReviewClick[]
+
+  @@index([businessId, startedAt])
+  @@index([qrCodeId, startedAt])
+  @@index([status, startedAt])
+  @@map("review_sessions")
+}
+
+model FeedbackSubmission {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId          String           @unique @map("session_id") @db.Uuid
+  businessId         String           @map("business_id") @db.Uuid
+  rating             Int              @db.SmallInt
+  themes             String[]         @default([])
+  comment            String?          @db.Text
+  highlight          String?          @db.Text
+  moment             String?          @db.Text
+  recommendationText String?          @map("recommendation_text") @db.Text
+  submittedAt        DateTime         @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  session            ReviewSession    @relation(fields: [sessionId], references: [id])
+  business           Business         @relation(fields: [businessId], references: [id])
+  drafts             ReviewDraft[]
+  privateFeedback    PrivateFeedback?
+
+  @@index([businessId, submittedAt])
+  @@index([businessId, rating])
+  @@index([rating, submittedAt])
+  @@map("feedback_submissions")
+}
+
+model ReviewDraft {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId            String              @map("session_id") @db.Uuid
+  feedbackSubmissionId String?             @map("feedback_submission_id") @db.Uuid
+  kind                 ReviewDraftKind
+  content              String              @db.Text
+  language             ReviewLanguage
+  modelName            String?             @map("model_name") @db.VarChar(100)
+  isSelected           Boolean             @default(false) @map("is_selected")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  selectedAt           DateTime?           @map("selected_at") @db.Timestamptz(6)
+  session              ReviewSession       @relation(fields: [sessionId], references: [id])
+  feedbackSubmission   FeedbackSubmission? @relation(fields: [feedbackSubmissionId], references: [id])
+  googleClicks         GoogleReviewClick[]
+
+  @@index([sessionId, createdAt])
+  @@index([feedbackSubmissionId])
+  @@index([isSelected])
+  @@map("review_drafts")
+}
+
+model PrivateFeedback {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId            String                @unique @map("session_id") @db.Uuid
+  feedbackSubmissionId String?               @unique @map("feedback_submission_id") @db.Uuid
+  businessId           String                @map("business_id") @db.Uuid
+  message              String                @db.Text
+  customerName         String?               @map("customer_name") @db.VarChar(160)
+  customerContact      String?               @map("customer_contact") @db.VarChar(320)
+  status               PrivateFeedbackStatus @default(new)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt           DateTime?             @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId     String?               @map("resolved_by_user_id") @db.Uuid
+  session              ReviewSession         @relation(fields: [sessionId], references: [id])
+  feedbackSubmission   FeedbackSubmission?   @relation(fields: [feedbackSubmissionId], references: [id])
+  business             Business              @relation(fields: [businessId], references: [id])
+  resolvedBy           User?                 @relation("FeedbackResolvedBy", fields: [resolvedByUserId], references: [id])
+
+  @@index([businessId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("private_feedback")
+}
+
+model GoogleReviewClick {
+  id            String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId     String                     @map("session_id") @db.Uuid
+  qrCodeId      String                     @map("qr_code_id") @db.Uuid
+  businessId    String                     @map("business_id") @db.Uuid
+  destinationId String?                    @map("destination_id") @db.Uuid
+  clickedAt     DateTime                   @default(now()) @map("clicked_at") @db.Timestamptz(6)
+  draftId       String?                    @map("draft_id") @db.Uuid
+  session       ReviewSession              @relation(fields: [sessionId], references: [id])
+  qrCode        QrCode                     @relation(fields: [qrCodeId], references: [id])
+  business      Business                   @relation(fields: [businessId], references: [id])
+  destination   BusinessGoogleDestination? @relation(fields: [destinationId], references: [id])
+  draft         ReviewDraft?               @relation(fields: [draftId], references: [id])
+
+  @@index([businessId, clickedAt])
+  @@index([qrCodeId, clickedAt])
+  @@index([clickedAt])
+  @@map("google_review_clicks")
+}
