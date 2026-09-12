@@ -3,9 +3,10 @@
 import { FormEvent, Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Heart, LockKeyhole } from "lucide-react";
 
 export default function LoginPage() {
-  return <Suspense fallback={<main style={{ minHeight: "100vh" }} />}><LoginForm /></Suspense>;
+  return <Suspense fallback={<main className="login-shell" />}><LoginForm /></Suspense>;
 }
 
 function LoginForm() {
@@ -30,5 +31,5 @@ function LoginForm() {
     router.refresh();
   }
 
-  return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#f4f5f1", color: "#1e2924", fontFamily: "Arial, sans-serif" }}><form onSubmit={submit} style={{ width: "min(100%, 390px)", padding: 32, background: "#fffdf8", border: "1px solid #d5ddcf", borderRadius: 18, boxShadow: "8px 8px 0 #1e2924" }}><h1 style={{ marginTop: 0, fontFamily: "Georgia, serif" }}>Kindred</h1><p>Platform Admin sign in</p><label style={{ display: "grid", gap: 6, marginTop: 20 }}>Email<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label style={{ display: "grid", gap: 6, marginTop: 14 }}>Password<input required type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <p role="alert" style={{ color: "#b42318" }}>{error}</p>}<button type="submit" disabled={loading} style={{ width: "100%", marginTop: 22, padding: "12px 16px", border: 0, borderRadius: 8, background: "#1e2924", color: "#fffdf8", cursor: "pointer" }}>{loading ? "Signing in..." : "Sign in"}</button></form></main>;
+  return <main className="login-shell"><div className="login-frame"><div className="login-brand"><span className="brand-mark"><Heart size={15} fill="currentColor" /></span>kindred</div><form className="login-card" onSubmit={submit}><div className="login-icon"><LockKeyhole size={19} /></div><p className="login-kicker">Platform workspace</p><h1>Welcome back</h1><p className="login-copy">Sign in to manage your Kindred experience.</p><label className="login-field">Email<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label className="login-field">Password<input required type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <p className="login-error" role="alert">{error}</p>}<button className="primary-admin-button login-submit" type="submit" disabled={loading}>{loading ? "Signing in..." : "Sign in"}</button></form></div></main>;
 }

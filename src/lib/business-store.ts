@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureTrial, validateIndustrySubcategory } from "@/lib/platform-store";
 
 export type BusinessStatus = "active" | "inactive" | "suspended";
 
@@ -13,6 +14,10 @@ export type BusinessSummary = {
   feedbackCount: number;
   averageRating: number | null;
   googleReviewUrl: string | null;
+  industryId: string | null;
+  subcategoryId: string | null;
+  industryName: string | null;
+  subcategoryName: string | null;
 };
 
 export type BusinessDetail = {
@@ -22,6 +27,10 @@ export type BusinessDetail = {
   location: string | null;
   status: BusinessStatus;
   timezone: string;
+  industryId: string | null;
+  subcategoryId: string | null;
+  industry: { id: string; name: string } | null;
+  subcategory: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
   qrCount: number;
@@ -103,6 +112,8 @@ export async function listBusinessesWithMetrics(): Promise<BusinessSummary[]> {
   const businesses = await prisma.business.findMany({
     orderBy: { createdAt: "desc" },
     include: {
+      industry: { select: { id: true, name: true } },
+      subcategory: { select: { id: true, name: true } },
       googleDestinations: {
         where: { isCurrent: true },
         orderBy: { createdAt: "desc" },
@@ -143,6 +154,10 @@ export async function listBusinessesWithMetrics(): Promise<BusinessSummary[]> {
       feedbackCount: feedback.count,
       averageRating: feedback.averageRating,
       googleReviewUrl: business.googleDestinations[0]?.reviewUrl ?? null,
+      industryId: business.industryId,
+      subcategoryId: business.subcategoryId,
+      industryName: business.industry?.name ?? null,
+      subcategoryName: business.subcategory?.name ?? null,
     };
   });
 }
@@ -151,6 +166,8 @@ export async function getBusinessDetail(businessId: string): Promise<BusinessDet
   const business = await prisma.business.findUnique({
     where: { id: businessId },
     include: {
+      industry: true,
+      subcategory: true,
       googleDestinations: {
         orderBy: { createdAt: "desc" },
         select: { id: true, reviewUrl: true, isCurrent: true, createdAt: true, retiredAt: true },
@@ -192,6 +209,10 @@ export async function getBusinessDetail(businessId: string): Promise<BusinessDet
     location: business.location,
     status: business.status,
     timezone: business.timezone,
+    industryId: business.industryId,
+    subcategoryId: business.subcategoryId,
+    industry: business.industry ? { id: business.industry.id, name: business.industry.name } : null,
+    subcategory: business.subcategory ? { id: business.subcategory.id, name: business.subcategory.name } : null,
     createdAt: business.createdAt.toISOString(),
     updatedAt: business.updatedAt.toISOString(),
     qrCount: business._count.qrCodes,
@@ -229,6 +250,9 @@ export async function createBusiness(input: Record<string, unknown>, createdByUs
   if (reviewUrl && !isValidGoogleReviewUrl(reviewUrl)) {
     throw new Error("Google review URL must be a valid Google URL");
   }
+  const industryId = typeof input.industryId === "string" ? input.industryId : null;
+  const subcategoryId = typeof input.subcategoryId === "string" ? input.subcategoryId : null;
+  await validateIndustrySubcategory(industryId, subcategoryId);
 
   const baseSlug = slugify(name);
   let candidate = baseSlug;
@@ -250,6 +274,8 @@ export async function createBusiness(input: Record<string, unknown>, createdByUs
         status: rawStatus,
         timezone,
         initial: name.slice(0, 1).toUpperCase(),
+        industryId,
+        subcategoryId,
       },
     });
 
@@ -267,6 +293,8 @@ export async function createBusiness(input: Record<string, unknown>, createdByUs
 
     return created;
   });
+
+  await ensureTrial(business.id, input.trialStartDate);
 
   return getBusinessDetail(business.id);
 }
@@ -297,6 +325,14 @@ export async function updateBusiness(businessId: string, input: Record<string, u
     updateData.timezone = timezone || "Asia/Kolkata";
   }
 
+  if (Object.prototype.hasOwnProperty.call(input, "industryId") || Object.prototype.hasOwnProperty.call(input, "subcategoryId")) {
+    const industryId = typeof input.industryId === "string" ? input.industryId : existing.industryId;
+    const subcategoryId = typeof input.subcategoryId === "string" ? input.subcategoryId : existing.subcategoryId;
+    await validateIndustrySubcategory(industryId, subcategoryId);
+    updateData.industryId = industryId;
+    updateData.subcategoryId = subcategoryId;
+  }
+
   if (Object.keys(updateData).length === 0) {
     return getBusinessDetail(businessId);
   }
@@ -308,6 +344,8 @@ export async function updateBusiness(businessId: string, input: Record<string, u
       location?: string | null;
       status?: BusinessStatus;
       timezone?: string;
+      industryId?: string | null;
+      subcategoryId?: string | null;
     },
   });
   return getBusinessDetail(business.id);
@@ -318,6 +356,7 @@ export async function deleteBusiness(businessId: string) {
   if (!business) return null;
 
   await prisma.$transaction(async (transaction) => {
+    await transaction.question.deleteMany({ where: { businessId } });
     await transaction.googleReviewClick.deleteMany({ where: { businessId } });
     await transaction.privateFeedback.deleteMany({ where: { businessId } });
     await transaction.feedbackSubmission.deleteMany({ where: { businessId } });

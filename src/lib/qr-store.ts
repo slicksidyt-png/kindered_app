@@ -162,7 +162,10 @@ export async function recordScan(qrCode: string) {
   if (!record) return null;
   const assignment = record.assignments[0];
   const now = new Date();
-  const subscriptionActive = assignment && assignment.subscriptionStartAt <= now && (!assignment.subscriptionEndAt || assignment.subscriptionEndAt > now);
+  const managedSubscriptions = record.businessId ? await prisma.businessSubscription.findMany({ where: { businessId: record.businessId }, select: { startDate: true, endDate: true, cancelledAt: true } }) : [];
+  const managedSubscriptionActive = managedSubscriptions.some((subscription) => subscription.startDate <= now && subscription.endDate > now && !subscription.cancelledAt);
+  const legacyAssignmentActive = Boolean(assignment && assignment.subscriptionStartAt <= now && (!assignment.subscriptionEndAt || assignment.subscriptionEndAt > now));
+  const subscriptionActive = managedSubscriptions.length ? managedSubscriptionActive : legacyAssignmentActive;
   const outcome = record.status !== "active" ? "inactive" : !record.businessId ? "unassigned" : record.business?.status !== "active" || !subscriptionActive ? "inactive" : "accepted";
   let sessionId: string | null = null;
   await prisma.$transaction(async (transaction) => {

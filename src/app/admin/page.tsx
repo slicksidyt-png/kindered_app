@@ -26,6 +26,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import PlatformManagement from "./platform-management";
 
 type MetricData = {
   feedbackCount: number;
@@ -46,6 +47,8 @@ type BusinessSummary = {
   feedbackCount: number;
   averageRating: number | null;
   googleReviewUrl: string | null;
+  industryName: string | null;
+  subcategoryName: string | null;
 };
 
 type BusinessDetail = BusinessSummary & {
@@ -75,6 +78,8 @@ type AdminBusiness = {
   googleReviewUrl: string;
 };
 
+type IndustryOption = { id: string; name: string; isActive: boolean; subcategories: Array<{ id: string; name: string; isActive: boolean }> };
+
 const nav = [
   { label: "Overview", icon: LayoutDashboard },
   { label: "Reviews", icon: Star },
@@ -82,6 +87,11 @@ const nav = [
   { label: "QR codes", icon: QrCode },
   { label: "Analytics", icon: BarChart3 },
   { label: "Businesses", icon: Building2 },
+  { label: "Industries", icon: Building2 },
+  { label: "Questionnaire", icon: FileText },
+  { label: "Knowledge Base", icon: FileText },
+  { label: "Subscriptions", icon: ShieldCheck },
+  { label: "Super QR", icon: QrCode },
 ] as const;
 
 
@@ -136,7 +146,7 @@ export default function AdminPage() {
           </div>
         </header>
 
-        {active === "Overview" ? <LiveOverview /> : active === "QR codes" ? <QrCodes /> : active === "Businesses" ? <BusinessesSection /> : <Placeholder title={active} />}
+        {active === "Overview" ? <LiveOverview /> : active === "QR codes" ? <QrCodes /> : active === "Businesses" ? <BusinessesSection /> : ["Industries", "Questionnaire", "Knowledge Base", "Subscriptions", "Super QR"].includes(active) ? <PlatformManagement section={active} /> : <Placeholder title={active} />}
       </section>
     </main>
   );
@@ -254,10 +264,15 @@ function BusinessesSection() {
   const [location, setLocation] = useState("");
   const [status, setStatus] = useState<"active" | "inactive" | "suspended">("active");
   const [googleReviewUrl, setGoogleReviewUrl] = useState("");
+  const [industries, setIndustries] = useState<IndustryOption[]>([]);
+  const [industryId, setIndustryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive" | "suspended">("all");
   const [selected, setSelected] = useState<BusinessDetail | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newCompanyCutoff] = useState(() => Date.now() - 30 * 86400000);
 
   const load = async () => {
     setLoading(true);
@@ -298,6 +313,10 @@ function BusinessesSection() {
     };
   }, []);
 
+  useEffect(() => {
+    fetch("/api/admin/industries").then((response) => response.ok ? response.json() : null).then((payload: { industries?: IndustryOption[] } | null) => setIndustries(payload?.industries ?? [])).catch(() => undefined);
+  }, []);
+
   const createBusiness = async () => {
     if (!name.trim()) {
       setError("Business name is required");
@@ -315,6 +334,8 @@ function BusinessesSection() {
           location: location.trim(),
           status,
           googleReviewUrl: googleReviewUrl.trim(),
+          industryId: industryId || null,
+          subcategoryId: subcategoryId || null,
         }),
       });
       const payload = await response.json();
@@ -323,6 +344,8 @@ function BusinessesSection() {
       setLocation("");
       setStatus("active");
       setGoogleReviewUrl("");
+      setIndustryId("");
+      setSubcategoryId("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create business");
@@ -351,11 +374,20 @@ function BusinessesSection() {
 
   return (
     <div className="dashboard-content business-manager">
-      <div className="admin-page-heading">
+      <div className="directory-heading">
         <div>
-          <p className="panel-kicker">BUSINESSES</p>
-          <h2>Manage platform businesses</h2>
+          <p className="panel-kicker">SALES WORKSPACE</p>
+          <h2>Companies <span>{businesses.length}</span></h2>
+          <p className="section-copy">Create and configure personalized demos for every sales conversation.</p>
         </div>
+        <button className="primary-admin-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Close form" : "Create company"}</button>
+      </div>
+
+      <div className="directory-summary-grid">
+        <button className="directory-summary-card" onClick={() => setFilter("all")}><span>NEW COMPANIES</span><strong>{businesses.filter((business) => new Date(business.createdAt).getTime() > newCompanyCutoff).length}</strong><small>Click to view</small></button>
+        <button className="directory-summary-card" onClick={() => setFilter("active")}><span>ACTIVE COMPANIES</span><strong>{businesses.filter((business) => business.status === "active").length}</strong><small>Click to filter</small></button>
+        <button className="directory-summary-card" onClick={() => setFilter("inactive")}><span>INACTIVE COMPANIES</span><strong>{businesses.filter((business) => business.status === "inactive").length}</strong><small>Click to filter</small></button>
+        <button className="directory-summary-card" onClick={() => setFilter("suspended")}><span>SUSPENDED COMPANIES</span><strong>{businesses.filter((business) => business.status === "suspended").length}</strong><small>Click to filter</small></button>
       </div>
 
       <div className="business-toolbar">
@@ -365,7 +397,7 @@ function BusinessesSection() {
         </div>
       </div>
 
-      <div className="business-form-panel">
+      {showCreate && <div className="business-form-panel">
         <div className="field-grid">
           <label>
             <span>Business name</span>
@@ -383,6 +415,20 @@ function BusinessesSection() {
               <option value="suspended">Suspended</option>
             </select>
           </label>
+          <label>
+            <span>Industry</span>
+            <select value={industryId} onChange={(event) => { setIndustryId(event.target.value); setSubcategoryId(""); }}>
+              <option value="">Select industry</option>
+              {industries.filter((industry) => industry.isActive).map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Subcategory</span>
+            <select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} disabled={!industryId}>
+              <option value="">Select subcategory</option>
+              {(industries.find((industry) => industry.id === industryId)?.subcategories ?? []).filter((subcategory) => subcategory.isActive).map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
+            </select>
+          </label>
           <label className="wide-field">
             <span>Google review destination</span>
             <input value={googleReviewUrl} onChange={(event) => setGoogleReviewUrl(event.target.value)} placeholder="https://g.page/... or a valid Google review URL" />
@@ -394,17 +440,17 @@ function BusinessesSection() {
             <Plus size={16} /> {saving ? "Creating..." : "Create business"}
           </button>
         </div>
-      </div>
+      </div>}
 
       {error && <div className="inline-error">{error}</div>}
 
       {loading ? (
         <div className="table-loading">Loading businesses...</div>
       ) : (
-        <div className="business-table">
+        <div className="business-table directory-table">
           <div className="business-table-head">
             <span>Name</span>
-            <span>Location</span>
+            <span>Industry</span>
             <span>Status</span>
             <span>QRs</span>
             <span>Scans</span>
@@ -424,7 +470,7 @@ function BusinessesSection() {
                   <strong>{business.name}</strong>
                   {business.googleReviewUrl ? <small>{business.googleReviewUrl}</small> : <small>No Google destination</small>}
                 </div>
-                <span>{business.location ?? "—"}</span>
+                <span><b>{business.industryName ?? "Uncategorized"}</b><small>{business.subcategoryName ?? business.location ?? "Location pending"}</small></span>
                 <span className={`status-pill ${business.status}`}>{business.status}</span>
                 <span>{business.qrCount}</span>
                 <span>{business.scanCount}</span>

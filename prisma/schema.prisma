@@ -62,6 +62,55 @@ enum ReviewDraftKind {
   manual
 }
 
+enum QuestionScope {
+  GLOBAL
+  INDUSTRY
+  SUBCATEGORY
+  BUSINESS
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  YES_NO
+  RATING
+  STAR_RATING
+  TEXT
+  NUMBER
+  SCALE
+}
+
+enum KnowledgeBaseType {
+  BUSINESS_INFORMATION
+  SERVICES
+  PRODUCTS
+  PRICING
+  FAQ
+  POLICIES
+  OPENING_HOURS
+  STAFF
+  CONTACT_INFORMATION
+  OTHER
+}
+
+enum SubscriptionDurationType {
+  DAY
+  MONTH
+}
+
+enum SubscriptionKind {
+  TRIAL
+  PAID
+}
+
+enum SubscriptionStatus {
+  TRIAL_ACTIVE
+  TRIAL_EXPIRED
+  SUBSCRIPTION_ACTIVE
+  SUBSCRIPTION_EXPIRED
+  CANCELLED
+}
+
 enum ReviewLanguage {
   English
   Hindi
@@ -80,6 +129,10 @@ model Business {
   timezone            String                      @default("Asia/Kolkata") @db.VarChar(64)
   createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  industryId          String?                     @map("industry_id") @db.Uuid
+  subcategoryId       String?                     @map("subcategory_id") @db.Uuid
+  industry            Industry?                   @relation(fields: [industryId], references: [id])
+  subcategory         Subcategory?                @relation(fields: [subcategoryId], references: [id])
   users               BusinessMembership[]
   googleDestinations  BusinessGoogleDestination[]
   qrCodes             QrCode[]
@@ -89,8 +142,14 @@ model Business {
   feedbackSubmissions FeedbackSubmission[]
   privateFeedback     PrivateFeedback[]
   googleReviewClicks  GoogleReviewClick[]
+  businessQuestions   Question[]                   @relation("BusinessQuestions")
+  knowledgeBase       KnowledgeBaseEntry[]
+  subscriptions       BusinessSubscription[]
+  superQrAccesses     SuperQrBusinessAccess[]
 
   @@index([status])
+  @@index([industryId])
+  @@index([subcategoryId])
   @@map("businesses")
 }
 
@@ -230,6 +289,7 @@ model ReviewSession {
   drafts              ReviewDraft[]
   privateFeedback     PrivateFeedback?
   googleClicks        GoogleReviewClick[]
+  questionResponses   QuestionResponse[]
 
   @@index([businessId, startedAt])
   @@index([qrCodeId, startedAt])
@@ -320,4 +380,202 @@ model GoogleReviewClick {
   @@index([qrCodeId, clickedAt])
   @@index([clickedAt])
   @@map("google_review_clicks")
+}
+
+model Industry {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String        @unique @db.VarChar(120)
+  slug          String        @unique @db.VarChar(140)
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  businesses    Business[]
+  subcategories Subcategory[]
+  questions     Question[]    @relation("IndustryQuestions")
+
+  @@index([isActive])
+  @@map("industries")
+}
+
+model Subcategory {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  industryId String     @map("industry_id") @db.Uuid
+  name       String     @db.VarChar(120)
+  slug       String     @db.VarChar(140)
+  isActive   Boolean    @default(true) @map("is_active")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  industry   Industry   @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  businesses Business[]
+  questions  Question[] @relation("SubcategoryQuestions")
+
+  @@unique([industryId, name])
+  @@unique([industryId, slug])
+  @@index([industryId, isActive])
+  @@map("subcategories")
+}
+
+model Question {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  text                  String         @db.Text
+  scope                 QuestionScope
+  type                  QuestionType
+  isActive              Boolean        @default(true) @map("is_active")
+  isRequired            Boolean        @default(false) @map("is_required")
+  displayOrder          Int            @default(0) @map("display_order")
+  applicableStarRatings Int[]          @default([]) @map("applicable_star_ratings")
+  industryId            String?        @map("industry_id") @db.Uuid
+  subcategoryId         String?        @map("subcategory_id") @db.Uuid
+  businessId            String?        @map("business_id") @db.Uuid
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  industry              Industry?      @relation("IndustryQuestions", fields: [industryId], references: [id])
+  subcategory           Subcategory?   @relation("SubcategoryQuestions", fields: [subcategoryId], references: [id])
+  business              Business?     @relation("BusinessQuestions", fields: [businessId], references: [id])
+  options               QuestionOption[]
+  keywords              QuestionKeyword[]
+  responses             QuestionResponse[]
+
+  @@index([scope, isActive, displayOrder])
+  @@index([industryId, isActive])
+  @@index([subcategoryId, isActive])
+  @@index([businessId, isActive])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId   String   @map("question_id") @db.Uuid
+  label        String   @db.VarChar(180)
+  value        String   @db.VarChar(180)
+  displayOrder Int      @default(0) @map("display_order")
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, value])
+  @@index([questionId, displayOrder])
+  @@map("question_options")
+}
+
+model Keyword {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  value     String            @unique @db.VarChar(80)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  questions QuestionKeyword[]
+
+  @@map("keywords")
+}
+
+model QuestionKeyword {
+  questionId String   @map("question_id") @db.Uuid
+  keywordId  String   @map("keyword_id") @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  keyword    Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, keywordId])
+  @@index([keywordId])
+  @@map("question_keywords")
+}
+
+model QuestionResponse {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String   @map("session_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  answers    String[] @default([])
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  session    ReviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, questionId])
+  @@index([questionId])
+  @@map("question_responses")
+}
+
+model KnowledgeBaseEntry {
+  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String            @map("business_id") @db.Uuid
+  title      String            @db.VarChar(180)
+  content    String            @db.Text
+  type       KnowledgeBaseType @default(OTHER)
+  isActive   Boolean           @default(true) @map("is_active")
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, isActive])
+  @@index([businessId, type])
+  @@map("knowledge_base_entries")
+}
+
+model SubscriptionPlan {
+  id             String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String                   @unique @db.VarChar(120)
+  durationType   SubscriptionDurationType @map("duration_type")
+  durationValue  Int                     @map("duration_value")
+  price          Decimal                 @db.Decimal(12, 2)
+  isActive       Boolean                 @default(true) @map("is_active")
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  subscriptions  BusinessSubscription[]
+
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model BusinessSubscription {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId     String             @map("business_id") @db.Uuid
+  planId         String?            @map("plan_id") @db.Uuid
+  kind           SubscriptionKind
+  status         SubscriptionStatus
+  startDate      DateTime           @map("start_date") @db.Timestamptz(6)
+  endDate        DateTime           @map("end_date") @db.Timestamptz(6)
+  cancelledAt    DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  business       Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan           SubscriptionPlan?  @relation(fields: [planId], references: [id])
+
+  @@index([businessId, startDate, endDate])
+  @@index([status, endDate])
+  @@map("business_subscriptions")
+}
+
+model SuperQr {
+  id          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publicToken String                  @unique @map("public_token") @db.VarChar(60)
+  label       String?                 @db.VarChar(120)
+  dynamicUrl  String                  @map("dynamic_url") @db.Text
+  isActive    Boolean                 @default(true) @map("is_active")
+  createdAt   DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  businesses  SuperQrBusinessAccess[]
+  scans       SuperQrScan[]
+
+  @@map("super_qr")
+}
+
+model SuperQrBusinessAccess {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  superQrId  String   @map("super_qr_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  superQr    SuperQr  @relation(fields: [superQrId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([superQrId, businessId])
+  @@index([superQrId, businessId])
+  @@map("super_qr_business_access")
+}
+
+model SuperQrScan {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  superQrId  String   @map("super_qr_id") @db.Uuid
+  scannedAt  DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
+  userAgent  String?  @map("user_agent") @db.Text
+  ipHash     String?  @map("ip_hash") @db.VarChar(128)
+  superQr    SuperQr  @relation(fields: [superQrId], references: [id], onDelete: Cascade)
+
+  @@index([superQrId, scannedAt])
+  @@map("super_qr_scans")
 }

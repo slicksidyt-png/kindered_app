@@ -22,7 +22,7 @@ export async function getReviewSession(sessionId: string) {
   return getSession(sessionId);
 }
 
-export async function saveFeedback(sessionId: string, input: { rating: number; themes: unknown; comment?: unknown; highlight?: unknown; moment?: unknown; recommendationText?: unknown; language?: unknown }) {
+export async function saveFeedback(sessionId: string, input: { rating: number; themes: unknown; comment?: unknown; highlight?: unknown; moment?: unknown; recommendationText?: unknown; language?: unknown; responses?: unknown }) {
   const session = await getSession(sessionId);
   if (!session) return null;
   if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) throw new Error("Rating must be an integer from 1 to 5");
@@ -35,6 +35,15 @@ export async function saveFeedback(sessionId: string, input: { rating: number; t
       create: { sessionId, businessId: session.businessId, rating: input.rating, themes, comment: cleanText(input.comment, 500) || null, highlight: cleanText(input.highlight, 1000) || null, moment: cleanText(input.moment, 2000) || null, recommendationText: cleanText(input.recommendationText, 1000) || null },
     });
     await transaction.reviewSession.update({ where: { id: sessionId }, data: { language, status: "feedback_submitted", lastActivityAt: new Date() } });
+    if (Array.isArray(input.responses)) {
+      for (const response of input.responses) {
+        if (!response || typeof response !== "object") continue;
+        const item = response as { questionId?: unknown; answers?: unknown };
+        if (typeof item.questionId !== "string" || !Array.isArray(item.answers)) continue;
+        const answers = item.answers.filter((answer): answer is string => typeof answer === "string").map((answer) => answer.trim().slice(0, 1000)).filter(Boolean).slice(0, 20);
+        await transaction.questionResponse.upsert({ where: { sessionId_questionId: { sessionId, questionId: item.questionId } }, update: { answers }, create: { sessionId, questionId: item.questionId, answers } });
+      }
+    }
     return saved;
   });
   return feedback;
