@@ -54,6 +54,8 @@ type BusinessSummary = {
 type BusinessDetail = BusinessSummary & {
   slug: string;
   timezone: string;
+  industryId: string | null;
+  subcategoryId: string | null;
   updatedAt: string;
   googleDestination: { id: string; reviewUrl: string; isCurrent: boolean; createdAt: string } | null;
   destinationHistory: Array<{ id: string; reviewUrl: string; isCurrent: boolean; createdAt: string; retiredAt: string | null }>;
@@ -484,15 +486,17 @@ function BusinessesSection() {
           )}
         </div>
       )}
-      {selected && <BusinessDetailModal business={selected} onClose={() => setSelected(null)} onChanged={async () => { await load(); await openBusiness(selected.id); }} />}
+      {selected && <BusinessDetailModal business={selected} industries={industries} onClose={() => setSelected(null)} onChanged={async () => { await load(); await openBusiness(selected.id); }} />}
     </div>
   );
 }
 
-function BusinessDetailModal({ business, onClose, onChanged }: { business: BusinessDetail; onClose: () => void; onChanged: () => Promise<void> }) {
+function BusinessDetailModal({ business, industries, onClose, onChanged }: { business: BusinessDetail; industries: IndustryOption[]; onClose: () => void; onChanged: () => Promise<void> }) {
   const [name, setName] = useState(business.name);
   const [location, setLocation] = useState(business.location ?? "");
   const [status, setStatus] = useState(business.status);
+  const [industryId, setIndustryId] = useState(business.industryId ?? "");
+  const [subcategoryId, setSubcategoryId] = useState(business.subcategoryId ?? "");
   const [destination, setDestination] = useState(business.googleDestination?.reviewUrl ?? "");
   const [subscriptionStartAt, setSubscriptionStartAt] = useState(new Date().toISOString().slice(0, 10));
   const [subscriptionEndAt, setSubscriptionEndAt] = useState("");
@@ -515,7 +519,7 @@ function BusinessDetailModal({ business, onClose, onChanged }: { business: Busin
     } finally { setBusy(false); }
   };
 
-  const saveBusiness = async () => { if (await request(`/api/businesses/${business.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, location, status }) }, "Business updated")) onClose(); };
+  const saveBusiness = async () => { if (await request(`/api/businesses/${business.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, location, status, industryId: industryId || null, subcategoryId: subcategoryId || null }) }, "Business updated")) onClose(); };
   const saveDestination = () => request(`/api/businesses/${business.id}/google-destination`, { method: business.googleDestination ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewUrl: destination }) }, "Google destination updated");
   const generateQr = () => request("/api/qr", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: `${business.name} QR`, businessId: business.id, subscriptionStartAt, subscriptionEndAt: subscriptionEndAt || null }) }, "QR created and assigned");
   const deleteBusiness = async () => {
@@ -539,7 +543,7 @@ function BusinessDetailModal({ business, onClose, onChanged }: { business: Busin
       <p className="panel-kicker">BUSINESS DETAIL</p><h2 id="business-detail-title">{business.name}</h2>
       {message && <div className="inline-success">{message}</div>}{error && <div className="inline-error">{error}</div>}
       <div className="detail-section"><h3>Business information</h3><div className="detail-form">
-        <label>Name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Location<input value={location} onChange={(event) => setLocation(event.target.value)} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as BusinessDetail["status"])}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></label><span className="detail-date">Created {new Date(business.createdAt).toLocaleDateString()}</span>
+        <label>Name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Location<input value={location} onChange={(event) => setLocation(event.target.value)} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as BusinessDetail["status"])}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></label><label>Industry<select value={industryId} onChange={(event) => { setIndustryId(event.target.value); setSubcategoryId(""); }}><option value="">Select industry</option>{industries.filter((industry) => industry.isActive).map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}</select></label><label>Subcategory<select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} disabled={!industryId}><option value="">Select subcategory</option>{(industries.find((industry) => industry.id === industryId)?.subcategories ?? []).filter((subcategory) => subcategory.isActive).map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}</select></label><span className="detail-date">Created {new Date(business.createdAt).toLocaleDateString()}</span>
       </div><div className="detail-actions"><button className="primary-admin-button" onClick={saveBusiness} disabled={busy}>Save business</button><button className="danger-admin-button" onClick={() => void deleteBusiness()} disabled={busy}><Trash2 size={14} /> Delete business</button></div></div>
       <div className="detail-metrics"><Metric label="QR codes" value={String(business.qrCount)} change="Current" icon={<QrCode />} /><Metric label="Scans" value={String(business.scanCount)} change="Total" icon={<BarChart3 />} /><Metric label="Feedback" value={String(business.feedbackCount)} change="Total" icon={<MessageSquareText />} /><Metric label="Avg rating" value={business.averageRating?.toFixed(1) ?? "—"} change="Live" icon={<Star />} accent="gold" /></div>
       <div className="detail-section"><h3>Google destination</h3><p className="detail-current">{business.googleDestination ? business.googleDestination.reviewUrl : "No Google review destination configured."}</p><div className="destination-editor"><input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="https://g.page/..." /><button className="secondary-admin-button" onClick={saveDestination} disabled={busy}>{business.googleDestination ? "Change destination" : "Configure destination"}</button></div><h4>Destination history</h4><div className="history-list">{business.destinationHistory.length === 0 ? <p className="muted-copy">No destination history.</p> : business.destinationHistory.map((item) => <div className="history-row" key={item.id}><span>{item.reviewUrl}</span><small>{new Date(item.createdAt).toLocaleDateString()} · {item.isCurrent ? "Current" : "Previous"}</small></div>)}</div></div>
